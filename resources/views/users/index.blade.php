@@ -51,6 +51,7 @@
                     <th>Nama</th>
                     <th>Email</th>
                     <th>Role</th>
+                    @if(auth()->user()->isSuperAdmin())<th>Perusahaan</th>@endif
                     <th>Status</th>
                     <th class="text-center">Invoice</th>
                     <th class="text-end">Aksi</th>
@@ -62,14 +63,13 @@
                     <td class="fw-semibold" data-label="Nama">{{ $u->name }}</td>
                     <td data-label="Email">{{ $u->email }}</td>
                     <td data-label="Role">
-                        @if($u->isAdmin())
-                            <span class="badge bg-danger">Admin</span>
-                        @elseif($u->isKaryawan())
-                            <span class="badge bg-warning text-dark">Karyawan</span>
-                        @else
-                            <span class="badge bg-info">Klien</span>
-                        @endif
+                        <span class="badge bg-{{ $u->roleColor() }}" {{ $u->isSuperAdmin() ? 'style="background:#0f172a !important;"' : '' }}>
+                            {{ $u->isSuperAdmin() ? '🛡️ ' : '' }}{{ $u->roleLabel() }}
+                        </span>
                     </td>
+                    @if(auth()->user()->isSuperAdmin())
+                    <td data-label="Perusahaan"><small>{{ $u->company?->name ?? '—' }}</small></td>
+                    @endif
                     <td data-label="Status">
                         @if($u->isPending())
                             <span class="badge bg-secondary">Pending</span>
@@ -96,23 +96,28 @@
                     <td class="text-center" data-label="Invoice">{{ $u->invoices_count }}</td>
                     <td class="text-end actions-cell" data-label="Aksi">
                         <div class="responsive-actions">
-                            <a href="{{ route('users.edit', $u) }}" class="btn btn-sm btn-outline-warning" title="Edit">
-                                <i class="bi bi-pencil"></i>
-                            </a>
-                            @if($u->id !== auth()->id())
-                            <form action="{{ route('users.destroy', $u) }}" method="POST" onsubmit="return confirm('Yakin hapus user {{ $u->name }}?')" class="d-inline">
-                                @csrf @method('DELETE')
-                                <button class="btn btn-sm btn-outline-danger" title="Hapus">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            </form>
+                            {{-- Akun Super Admin terkunci: hanya bisa diubah Super Admin --}}
+                            @if($u->isSuperAdmin() && !auth()->user()->isSuperAdmin())
+                                <span class="badge bg-dark"><i class="bi bi-lock-fill"></i> Terkunci</span>
+                            @else
+                                <a href="{{ route('users.edit', $u) }}" class="btn btn-sm btn-outline-warning" title="Edit">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                                @if($u->id !== auth()->id())
+                                <form action="{{ route('users.destroy', $u) }}" method="POST" onsubmit="return confirm('Yakin hapus user {{ $u->name }}?')" class="d-inline">
+                                    @csrf @method('DELETE')
+                                    <button class="btn btn-sm btn-outline-danger" title="Hapus">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                                @endif
                             @endif
                         </div>
                     </td>
                 </tr>
                 @empty
                 <tr>
-                    <td colspan="6">
+                    <td colspan="{{ auth()->user()->isSuperAdmin() ? 7 : 6 }}">
                         <div class="empty-state">
                             <i class="bi bi-person-x"></i>
                             <h5>Tidak ada data user</h5>

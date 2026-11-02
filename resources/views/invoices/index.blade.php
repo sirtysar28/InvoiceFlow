@@ -90,6 +90,12 @@
                             <i class="bi bi-eye"></i>
                         </a>
                         @if(!auth()->user()?->isKlien())
+                        @if($invoice->client_phone)
+                        <a href="{{ route('invoices.send-wa', $invoice) }}" class="btn btn-sm btn-action" target="_blank" title="Tagih via WhatsApp (Desktop: WhatsApp Web)"
+                           style="border:1px solid #25D366; color:#128C7E;">
+                            <i class="bi bi-whatsapp"></i>
+                        </a>
+                        @endif
                         <a href="{{ route('invoices.edit', $invoice) }}" class="btn btn-sm btn-outline-warning btn-action" title="Edit">
                             <i class="bi bi-pencil"></i>
                         </a>

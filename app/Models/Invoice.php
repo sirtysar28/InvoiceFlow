@@ -78,6 +78,11 @@ class Invoice extends Model
         return $this->hasMany(NotificationLog::class);
     }
 
+    public function payments()
+    {
+        return $this->hasMany(\App\Models\Payment::class);
+    }
+
     public function markAsPaid()
     {
         $this->is_paid = true;

@@ -7,6 +7,7 @@ use App\Models\InvoiceItem;
 use App\Models\Client;
 use App\Models\BusinessProfile;
 use App\Models\MessageTemplate;
+use App\Services\ActivityLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -24,11 +25,10 @@ class InvoiceController extends Controller
         if ($user?->isKlien()) {
             $query->where('client_email', $user->email);
         }
-        // Karyawan hanya lihat invoice buatannya sendiri
-        elseif (!$user?->isAdmin()) {
+        // Admin & Finance lihat semua invoice
+        elseif (!($user?->isAdmin() || $user?->isFinance())) {
             $query->where('user_id', $user->id);
         }
-        // Admin lihat semua (no filter)
 
         // Filter
         if ($request->has('status')) {
@@ -63,7 +63,7 @@ class InvoiceController extends Controller
         $countBase = Invoice::query();
         if ($user?->isKlien()) {
             $countBase->where('client_email', $user->email);
-        } elseif (!$user?->isAdmin()) {
+        } elseif (!($user?->isAdmin() || $user?->isFinance())) {
             $countBase->where('user_id', $user->id);
         }
 
@@ -167,6 +167,8 @@ class InvoiceController extends Controller
             ]);
         }
 
+        ActivityLogger::log('invoice.create', 'Invoice', 'Membuat invoice ' . $invoice->invoice_number . ' untuk ' . $invoice->client_name . ' (Rp ' . number_format($invoice->total, 0, ',', '.') . ')');
+
         return redirect()->route('invoices.show', $invoice)
             ->with('success', 'Invoice berhasil dibuat!');
     }
@@ -175,11 +177,9 @@ class InvoiceController extends Controller
     {
         $this->authorizeInvoice($invoice);
         $invoice->load('items');
-        $businessProfile = BusinessProfile::where('user_id', auth()->id())->first();
-        $waTemplate = MessageTemplate::where('user_id', auth()->id())
-            ->where('type', 'whatsapp')->first();
-        $emailTemplate = MessageTemplate::where('user_id', auth()->id())
-            ->where('type', 'email')->first();
+        $businessProfile = BusinessProfile::current();
+        $waTemplate = MessageTemplate::forType('whatsapp');
+        $emailTemplate = MessageTemplate::forType('email');
 
         return view('invoices.show', compact('invoice', 'businessProfile', 'waTemplate', 'emailTemplate'));
     }
@@ -261,6 +261,8 @@ class InvoiceController extends Controller
             ]);
         }
 
+        ActivityLogger::log('invoice.update', 'Invoice', 'Memperbarui invoice ' . $invoice->invoice_number);
+
         return redirect()->route('invoices.show', $invoice)
             ->with('success', 'Invoice berhasil diperbarui!');
     }
@@ -276,6 +278,8 @@ class InvoiceController extends Controller
         }
 
         $invoice->delete();
+        ActivityLogger::log('invoice.delete', 'Invoice', 'Menghapus invoice ' . $invoice->invoice_number);
+
         return redirect()->route('invoices.index')
             ->with('success', 'Invoice berhasil dihapus!');
     }
@@ -285,6 +289,7 @@ class InvoiceController extends Controller
         $this->forbidKlien();
         $this->authorizeInvoice($invoice);
         $invoice->markAsPaid();
+        ActivityLogger::log('invoice.paid', 'Invoice', 'Menandai invoice ' . $invoice->invoice_number . ' sebagai LUNAS');
         return back()->with('success', 'Invoice berhasil ditandai lunas! ✅');
     }
 
@@ -296,6 +301,7 @@ class InvoiceController extends Controller
         $invoice->status = 'unpaid';
         $invoice->paid_at = null;
         $invoice->save();
+        ActivityLogger::log('invoice.unpaid', 'Invoice', 'Mengembalikan invoice ' . $invoice->invoice_number . ' ke belum lunas');
         return back()->with('success', 'Status invoice dikembalikan ke belum lunas.');
     }
 
@@ -309,24 +315,61 @@ class InvoiceController extends Controller
         return $pdf->download("Invoice-{$invoice->invoice_number}.pdf");
     }
 
-    public function sendWhatsApp(Invoice $invoice)
+    public function sendWhatsApp(Request $request, Invoice $invoice)
     {
         $this->forbidKlien();
         $this->authorizeInvoice($invoice);
         $invoice->markAsSent();
 
-        $businessProfile = BusinessProfile::where('user_id', auth()->id())->first();
-        $template = MessageTemplate::where('user_id', auth()->id())
-            ->where('type', 'whatsapp')->first();
+        $businessProfile = BusinessProfile::current();
+        $template = MessageTemplate::forType('whatsapp');
 
         $message = $template
             ? $template->getParsedBody($invoice)
             : $this->getDefaultWaMessage($invoice, $businessProfile);
 
-        $phone = preg_replace('/[^0-9]/', '', $invoice->client_phone);
-        $waUrl = "https://wa.me/{$phone}?text=" . urlencode($message);
+        $phone = $this->normalizeWaPhone($invoice->client_phone);
+
+        if (!$phone) {
+            return back()->with('error', 'Nomor HP klien tidak tersedia / tidak valid.');
+        }
+
+        // Mobile → buka aplikasi WhatsApp (wa.me)
+        // Desktop  → langsung WhatsApp Web (web.whatsapp.com)
+        $isMobile = preg_match(
+            '/(android|iphone|ipad|ipod|opera mini|iemobile|mobile|webos)/i',
+            (string) $request->userAgent()
+        );
+
+        ActivityLogger::log('invoice.send-wa', 'Invoice', 'Mengirim invoice ' . $invoice->invoice_number . ' via WhatsApp ke ' . $invoice->client_name);
+
+        $waUrl = $isMobile
+            ? "https://wa.me/{$phone}?text=" . urlencode($message)
+            : "https://web.whatsapp.com/send?phone={$phone}&text=" . urlencode($message);
 
         return redirect()->away($waUrl);
+    }
+
+    /**
+     * Normalisasi nomor HP ke format internasional WhatsApp (62xxx).
+     * 0812… → 62812…, 812… → 62812…, +62812…/62812… → 62812…
+     */
+    private function normalizeWaPhone(?string $raw): ?string
+    {
+        $phone = preg_replace('/[^0-9]/', '', (string) $raw);
+
+        if ($phone === '') {
+            return null;
+        }
+
+        if (str_starts_with($phone, '0')) {
+            $phone = '62' . substr($phone, 1);
+        } elseif (str_starts_with($phone, '8')) {
+            $phone = '62' . $phone;
+        }
+
+        // Nomor Indonesia valid minimal 10 digit
+        return strlen($phone) >= 10 ? $phone : null;
     }
 
     public function sendEmail(Request $request, Invoice $invoice)
@@ -347,14 +390,46 @@ class InvoiceController extends Controller
             new InvoiceSendToClient($invoice, $businessProfile, $request->subject, $request->message)
         );
 
+        ActivityLogger::log('invoice.send-email', 'Invoice', 'Mengirim invoice ' . $invoice->invoice_number . ' via Email ke ' . $invoice->client_email);
+
         return back()->with('success', 'Email berhasil dikirim ke ' . $invoice->client_email);
     }
 
     public function publicView($id)
     {
-        $invoice = Invoice::findOrFail($id);
+        $invoice = Invoice::with('payments')->findOrFail($id);
         $businessProfile = BusinessProfile::where('user_id', $invoice->user_id)->first();
-        return view('invoices.public', compact('invoice', 'businessProfile'));
+        $midtransActive = \App\Services\MidtransService::enabled();
+        $pendingPayment = $invoice->payments->where('status', 'pending')->sortByDesc('created_at')->first();
+
+        // ===== Midtrans auto-sync =====
+        // Pembayaran via Midtrans TIDAK butuh verifikasi admin: begitu halaman ini
+        // dibuka (misal setelah kembali dari Snap), status dicek LANGSUNG ke Midtrans.
+        // Jika sudah settlement → payment success + invoice OTOMATIS LUNAS.
+        // Ini lapisan cadangan bila webhook belum terpasang / terlambat sampai.
+        if (
+            $pendingPayment
+            && $pendingPayment->method === 'midtrans'
+            && $pendingPayment->order_id
+            && $midtransActive
+        ) {
+            try {
+                $midtransData = \App\Services\MidtransService::checkStatus($pendingPayment);
+
+                if ($midtransData) {
+                    \App\Services\MidtransService::applyStatus($pendingPayment, $midtransData);
+
+                    if ($pendingPayment->fresh()->status !== 'pending') {
+                        $invoice->refresh();
+                        $pendingPayment = null; // sudah diproses — tampilkan status terbaru
+                    }
+                }
+            } catch (\Throwable $e) {
+                // Jangan sampai halaman invoice gagal karena API Midtrans bermasalah
+            }
+        }
+
+        return view('invoices.public', compact('invoice', 'businessProfile', 'midtransActive', 'pendingPayment'));
     }
 
     private function generateInvoiceNumber(): string
@@ -372,10 +447,11 @@ class InvoiceController extends Controller
 
     private function getUserClients()
     {
-        $isAdmin = auth()->user()?->isAdmin();
+        $user = auth()->user();
+        $seeAll = $user?->isAdmin() || $user?->isFinance();
         $query = Client::orderBy('name');
 
-        if (!$isAdmin) {
+        if (!$seeAll) {
             $query->where('user_id', auth()->id());
         }
 
@@ -386,8 +462,8 @@ class InvoiceController extends Controller
     {
         $user = auth()->user();
 
-        // Admin bisa akses semua invoice
-        if ($user?->isAdmin()) {
+        // Admin & Finance bisa akses semua invoice
+        if ($user?->isAdmin() || $user?->isFinance()) {
             return;
         }
 

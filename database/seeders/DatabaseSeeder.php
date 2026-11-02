@@ -15,54 +15,64 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        // Create demo user
-        $user = User::create([
-            'name' => 'Admin InvoiceFlow',
-            'email' => 'admin@invoiceflow.com',
-            'password' => Hash::make('password'),
-            'email_verified_at' => now(),
-        ]);
+        // ===== Admin (idempoten: aman dijalankan berulang kali) =====
+        $user = User::updateOrCreate(
+            ['email' => 'admin@invoiceflow.com'],
+            [
+                'name' => 'Admin InvoiceFlow',
+                'password' => Hash::make('password'),
+                'role' => User::ROLE_ADMIN,      // WAJIB: agar menu Master User, Pengaturan SMTP tampil
+                'status' => 'active',
+                'email_verified_at' => now(),
+            ]
+        );
 
-        // Business profile
-        BusinessProfile::create([
-            'user_id' => $user->id,
-            'business_name' => 'PT. Digital Kreatif Indonesia',
-            'address' => 'Jl. Teknologi No. 88, Kawasan Bisnis\nJakarta Selatan, 12950',
-            'phone' => '081234567890',
-            'email' => 'info@digitalkreatif.com',
-            'bank_name' => 'BCA',
-            'bank_account_number' => '1234567890',
-            'bank_account_name' => 'PT Digital Kreatif Indonesia',
-        ]);
+        // ===== Business profile =====
+        BusinessProfile::updateOrCreate(
+            ['user_id' => $user->id],
+            [
+                'business_name' => 'PT. Digital Kreatif Indonesia',
+                'address' => 'Jl. Teknologi No. 88, Kawasan Bisnis\nJakarta Selatan, 12950',
+                'phone' => '081234567890',
+                'email' => 'info@digitalkreatif.com',
+                'bank_name' => 'BCA',
+                'bank_account_number' => '1234567890',
+                'bank_account_name' => 'PT Digital Kreatif Indonesia',
+            ]
+        );
 
-        // Notification settings
-        NotificationSetting::create([
-            'user_id' => $user->id,
-            'wa_enabled' => false,
-            'email_enabled' => true,
-            'email' => 'admin@invoiceflow.com',
-            'days_before_due' => [2, 1],
-            'send_on_due_day' => true,
-            'send_at_hour' => 9,
-        ]);
+        // ===== Notification settings =====
+        NotificationSetting::updateOrCreate(
+            ['user_id' => $user->id],
+            [
+                'wa_enabled' => false,
+                'email_enabled' => true,
+                'email' => 'admin@invoiceflow.com',
+                'days_before_due' => [2, 1],
+                'send_on_due_day' => true,
+                'send_at_hour' => 9,
+            ]
+        );
 
-        // Message templates
-        MessageTemplate::create([
-            'user_id' => $user->id,
-            'name' => 'Template WA Default',
-            'type' => 'whatsapp',
-            'body' => "Halo {nama_klien},%0A%0ABerikut tagihan invoice Anda:%0A📄 No. Invoice: {no_invoice}%0A💰 Total: Rp {total}%0A📅 Jatuh Tempo: {tanggal_jatuh_tempo}%0A%0A🔗 Link: {link_invoice}%0A%0ATerima kasih.",
-        ]);
+        // ===== Message templates =====
+        MessageTemplate::updateOrCreate(
+            ['user_id' => $user->id, 'type' => 'whatsapp'],
+            [
+                'name' => 'Template WA Default',
+                'body' => "Halo {nama_klien},\n\nBerikut tagihan invoice Anda:\n📄 No. Invoice: {no_invoice}\n💰 Total: Rp {total}\n📅 Jatuh Tempo: {tanggal_jatuh_tempo}\n\n🔗 Link: {link_invoice}\n\nTerima kasih.",
+            ]
+        );
 
-        MessageTemplate::create([
-            'user_id' => $user->id,
-            'name' => 'Template Email Default',
-            'type' => 'email',
-            'subject' => 'Invoice #{no_invoice} - {nama_klien}',
-            'body' => "Halo {nama_klien},\n\nBerikut terlampir invoice dengan detail:\n\nNo. Invoice: {no_invoice}\nTotal: Rp {total}\nJatuh Tempo: {tanggal_jatuh_tempo}\n\nSilahkan melakukan pembayaran sebelum tanggal jatuh tempo.\n\nPembayaran dapat ditransfer ke:\nBCA 1234567890 a.n PT Digital Kreatif Indonesia\n\nLink Invoice: {link_invoice}\n\nTerima kasih.",
-        ]);
+        MessageTemplate::updateOrCreate(
+            ['user_id' => $user->id, 'type' => 'email'],
+            [
+                'name' => 'Template Email Default',
+                'subject' => 'Invoice #{no_invoice} - {nama_klien}',
+                'body' => "Halo {nama_klien},\n\nBerikut terlampir invoice dengan detail:\n\nNo. Invoice: {no_invoice}\nTotal: Rp {total}\nJatuh Tempo: {tanggal_jatuh_tempo}\n\nSilahkan melakukan pembayaran sebelum tanggal jatuh tempo.\n\nPembayaran dapat ditransfer ke:\nBCA 1234567890 a.n PT Digital Kreatif Indonesia\n\nLink Invoice: {link_invoice}\n\nTerima kasih.",
+            ]
+        );
 
-        // Sample invoices
+        // ===== Sample invoices (hanya dibuat jika belum ada) =====
         $this->createSampleInvoice($user, [
             'invoice_number' => 'INV/202501/001',
             'client_name' => 'Budi Santoso',
@@ -98,7 +108,9 @@ class DatabaseSeeder extends Seeder
             'tax' => 11,
             'due_date' => now()->subDays(30),
         ]);
-        $paid->markAsPaid();
+        if (!$paid->is_paid) {
+            $paid->markAsPaid();
+        }
 
         $this->createSampleInvoice($user, [
             'invoice_number' => 'INV/202501/004',
@@ -112,10 +124,18 @@ class DatabaseSeeder extends Seeder
             'discount' => 10,
             'due_date' => now()->addDays(1),
         ]);
+
+        $this->command?->info('✅ Seeder selesai — data admin & contoh invoice siap. Login: admin@invoiceflow.com / password');
     }
 
     private function createSampleInvoice(User $user, array $data): Invoice
     {
+        // Lewati jika invoice dengan nomor tersebut sudah ada (idempoten)
+        $existing = Invoice::where('invoice_number', $data['invoice_number'])->first();
+        if ($existing) {
+            return $existing;
+        }
+
         $quantity = $data['quantity'];
         $unitPrice = $data['unit_price'];
         $subtotal = $quantity * $unitPrice;

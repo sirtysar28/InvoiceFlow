@@ -11,6 +11,7 @@ class MessageTemplate extends Model
 
     protected $fillable = [
         'user_id',
+        'company_id',
         'name',
         'type',
         'subject',
@@ -25,6 +26,22 @@ class MessageTemplate extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function company()
+    {
+        return $this->belongsTo(Company::class);
+    }
+
+    /** Template untuk tipe tertentu (whatsapp/email): milik perusahaan user login, fallback platform. */
+    public static function forType(string $type, ?int $companyId = null): ?self
+    {
+        $companyId ??= auth()->user()?->company_id;
+
+        return $companyId
+            ? (self::where('company_id', $companyId)->where('type', $type)->first()
+                ?? self::whereNull('company_id')->where('type', $type)->first())
+            : self::whereNull('company_id')->where('type', $type)->first();
+    }
+
     public function getParsedBody(Invoice $invoice): string
     {
         $replacements = [
@@ -35,6 +52,22 @@ class MessageTemplate extends Model
             '{link_invoice}' => route('invoices.public', $invoice->id),
         ];
 
-        return str_replace(array_keys($replacements), array_values($replacements), $this->body);
+        $body = str_replace(array_keys($replacements), array_values($replacements), $this->body);
+
+        return $this->normalizeNewlines($body);
+    }
+
+    /**
+     * Anti "ngaco": template lama/seeder pernah menyimpan newline sebagai
+     * literal %0A (percent-encoded). Saat controller men-urlencode() pesan,
+     * %0A ikut ter-encode lagi jadi %250A sehingga WhatsApp menampilkan
+     * teks "%0A" mentah. Normalisasi ke newline asli di sini.
+     */
+    private function normalizeNewlines(string $body): string
+    {
+        // %0D%0A / %0A / %0D literal → newline asli
+        $body = str_replace(['%0D%0A', '%0d%0a', '%0A', '%0a', '%0D', '%0d'], "\n", $body);
+        // Samakan CRLF → LF
+        return str_replace(["\r\n", "\r"], "\n", $body);
     }
 }

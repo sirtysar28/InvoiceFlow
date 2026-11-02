@@ -4,7 +4,7 @@
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h3 class="fw-bold mb-0">📝 Template Pesan</h3>
-    <button class="btn text-white" style="background:#4f46e5;" data-bs-toggle="modal" data-bs-target="#createTemplateModal">
+    <button class="btn btn-brand text-white" data-bs-toggle="modal" data-bs-target="#createTemplateModal">
         <i class="bi bi-plus-lg"></i> Buat Template
     </button>
 </div>
@@ -42,7 +42,11 @@
                     <td data-label="Subject">{{ Str::limit($tpl->subject, 40) }}</td>
                     <td data-label="Dibuat"><small class="text-muted">{{ $tpl->created_at->format('d/m/Y') }}</small></td>
                     <td class="text-end actions-cell" data-label="Aksi">
-                        <button class="btn btn-sm btn-outline-primary" onclick="editTemplate({{ $tpl->id }}, '{{ addslashes($tpl->name) }}', '{{ addslashes($tpl->subject) }}', '{{ addslashes($tpl->body) }}')">
+                        <button type="button" class="btn btn-sm btn-outline-primary js-edit-template"
+                                data-id="{{ $tpl->id }}"
+                                data-name="{{ $tpl->name }}"
+                                data-subject="{{ $tpl->subject }}"
+                                data-body="{{ $tpl->body }}">
                             <i class="bi bi-pencil"></i> Edit
                         </button>
                         <form action="{{ route('templates.destroy', $tpl) }}" method="POST" class="d-inline">
@@ -100,7 +104,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-                    <button type="submit" class="btn text-white" style="background:#4f46e5;">
+                    <button type="submit" class="btn btn-brand text-white">
                         <i class="bi bi-save"></i> Simpan
                     </button>
                 </div>
@@ -135,7 +139,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-                    <button type="submit" class="btn text-white" style="background:#4f46e5;">
+                    <button type="submit" class="btn btn-brand text-white">
                         <i class="bi bi-save"></i> Perbarui
                     </button>
                 </div>
@@ -146,13 +150,20 @@
 
 @push('scripts')
 <script>
-    function editTemplate(id, name, subject, body) {
-        document.getElementById('editForm').action = '/templates/' + id;
-        document.getElementById('editName').value = name;
-        document.getElementById('editSubject').value = subject || '';
-        document.getElementById('editBody').value = body;
-        new bootstrap.Modal(document.getElementById('editTemplateModal')).show();
-    }
+    // Edit template via data-attribute → aman untuk isi pesan multi-baris (newline)
+    // yang tidak bisa ditangani addslashes() pada inline onclick.
+    document.addEventListener('click', function (e) {
+        const btn = e.target.closest('.js-edit-template');
+        if (!btn) return;
+
+        const d = btn.dataset;
+        document.getElementById('editForm').action = '/templates/' + d.id;
+        document.getElementById('editName').value = d.name || '';
+        document.getElementById('editSubject').value = d.subject || '';
+        document.getElementById('editBody').value = d.body || '';
+
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('editTemplateModal')).show();
+    });
 </script>
 @endpush
 

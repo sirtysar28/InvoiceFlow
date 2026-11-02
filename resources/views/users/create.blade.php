@@ -41,6 +41,19 @@
                     @endforeach
                 </select>
                 @error('role') <small class="text-danger">{{ $message }}</small> @enderror
+                @if(auth()->user()->isSuperAdmin())
+                <div class="mt-3">
+                    <label class="form-label fw-semibold">Perusahaan (tenant) — khusus Super Admin</label>
+                    <select name="company_id" class="form-select">
+                        <option value="">— Tanpa perusahaan (klien/platform) —</option>
+                        @foreach($companies as $c)
+                        <option value="{{ $c->id }}" {{ old('company_id') == $c->id ? 'selected' : '' }}>{{ $c->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                @else
+                <input type="hidden" name="company_id" value="">
+                @endif
                 <small class="text-muted">
                     <b>Admin</b>: akses penuh · <b>Karyawan</b>: buat invoice, tidak bisa hapus · <b>Klien</b>: hanya lihat invoice sendiri
                 </small>

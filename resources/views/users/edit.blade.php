@@ -40,6 +40,17 @@
                     @endforeach
                 </select>
                 @error('role') <small class="text-danger">{{ $message }}</small> @enderror
+                @if(auth()->user()->isSuperAdmin())
+                <div class="mt-2">
+                    <label class="form-label fw-semibold">Perusahaan (tenant) — khusus Super Admin</label>
+                    <select name="company_id" class="form-select">
+                        <option value="">— Tanpa perusahaan (klien/platform) —</option>
+                        @foreach($companies as $c)
+                        <option value="{{ $c->id }}" {{ old('company_id', $user->company_id) == $c->id ? 'selected' : '' }}>{{ $c->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                @endif
             </div>
             <div class="col-12 d-flex gap-2 pt-2">
                 <button type="submit" class="btn text-white px-4" style="background:#4f46e5;">

@@ -1,6 +1,11 @@
 <?php
 
 return [
+    // Nomor WhatsApp admin/support untuk tombol chat floating
+    'whatsapp' => [
+        'support_number' => env('WA_SUPPORT_NUMBER', '6281234567890'),
+    ],
+
     'postmark' => [
         'token' => env('POSTMARK_TOKEN'),
     ],

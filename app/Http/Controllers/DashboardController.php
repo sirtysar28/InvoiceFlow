@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Invoice;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class DashboardController extends Controller
 {
@@ -16,11 +17,11 @@ class DashboardController extends Controller
         if ($user->isKlien()) {
             $query->where('client_email', $user->email);
         }
-        // Karyawan lihat invoice buatannya sendiri
-        elseif ($user->isKaryawan()) {
-            $query->where('user_id', $user->id);
+        // Admin, Super Admin & Finance lihat semua invoice
+        elseif ($user->isAdmin() || $user->isFinance()) {
+            // tanpa filter
         }
-        // Admin lihat semua (no filter)
+        // Sales & karyawan lihat invoice buatannya sendiri
         else {
             $query->where('user_id', $user->id);
         }
@@ -50,10 +51,14 @@ class DashboardController extends Controller
             ->take(5)
             ->get();
 
-        // Monthly stats (current year, by month)
+        // Monthly stats (current year, by month) — kompatibel MySQL & SQLite
+        $monthExpr = DB::connection()->getDriverName() === 'mysql'
+            ? "MONTH(created_at)"
+            : "CAST(strftime('%m', created_at) AS INTEGER)";
+
         $monthlyStats = (clone $baseQuery)
             ->whereYear('created_at', now()->year)
-            ->selectRaw('MONTH(created_at) as month, COUNT(*) as count, SUM(total) as total')
+            ->selectRaw("{$monthExpr} as month, COUNT(*) as count, SUM(total) as total")
             ->groupBy('month')
             ->orderBy('month')
             ->get()

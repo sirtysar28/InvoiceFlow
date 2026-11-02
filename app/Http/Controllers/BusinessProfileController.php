@@ -9,7 +9,7 @@ class BusinessProfileController extends Controller
 {
     public function index()
     {
-        $profile = BusinessProfile::where('user_id', auth()->id())->first();
+        $profile = BusinessProfile::current();
         return view('profile.business', compact('profile'));
     }
 
@@ -34,9 +34,12 @@ class BusinessProfileController extends Controller
         $validated['user_id'] = auth()->id();
 
         $profile = BusinessProfile::updateOrCreate(
-            ['user_id' => auth()->id()],
+            // SaaS: 1 profil per perusahaan (SA = platform)
+            ['company_id' => auth()->user()?->company_id],
             $validated
         );
+
+        \App\Services\ActivityLogger::log('profile.update', 'Profil Bisnis', 'Memperbarui profil bisnis "' . $validated['business_name'] . '"');
 
         return back()->with('success', 'Profil bisnis berhasil disimpan! ✅');
     }

@@ -75,6 +75,8 @@ class ClientController extends Controller
 
         $client = Client::create($validated);
 
+        \App\Services\ActivityLogger::log('client.create', 'Klien', 'Menambahkan klien "' . $client->name . '"' . ($linkedUserId ? ' (dengan akun login)' : ''));
+
         return redirect()->route('clients.index')
             ->with('success', 'Klien berhasil ditambahkan! ' . ($linkedUserId ? 'Akun login juga sudah dibuat.' : ''));
     }
@@ -113,6 +115,8 @@ class ClientController extends Controller
 
         $client->update($validated);
 
+        \App\Services\ActivityLogger::log('client.update', 'Klien', 'Memperbarui klien "' . $client->name . '"');
+
         return redirect()->route('clients.show', $client)
             ->with('success', 'Data klien berhasil diperbarui! ✅');
     }
@@ -127,6 +131,8 @@ class ClientController extends Controller
         }
 
         $client->delete();
+
+        \App\Services\ActivityLogger::log('client.delete', 'Klien', 'Menghapus klien "' . $client->name . '"');
 
         return redirect()->route('clients.index')
             ->with('success', 'Klien berhasil dihapus!');
